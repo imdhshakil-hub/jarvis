@@ -56,10 +56,14 @@ small{color:var(--mut);display:block;margin-top:4px}
 <div id="set">
   <h2 style="color:var(--cy);margin-top:0">সেটিংস</h2>
   <small>Key শুধু আপনার ফোনের ব্রাউজারে থাকে।</small>
-  <label>OpenAI API Key (বাধ্যতামূলক)</label>
-  <input id="k_oa" type="password" placeholder="sk-..." autocomplete="off">
-  <label>OpenAI মডেল</label>
-  <select id="k_model"><option value="gpt-4o-mini">gpt-4o-mini (সস্তা, দ্রুত)</option><option value="gpt-4o">gpt-4o (বেশি ভালো)</option></select>
+  <label>AI প্রোভাইডার</label>
+  <select id="k_prov"><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option></select>
+  <label>API Key (বাধ্যতামূলক)</label>
+  <input id="k_oa" type="password" placeholder="OpenRouter: sk-or-...  |  OpenAI: sk-..." autocomplete="off">
+  <label>মডেলের নাম</label>
+  <input id="k_model" list="mlist" placeholder="খালি রাখলে ডিফল্ট" autocomplete="off">
+  <datalist id="mlist"><option value="openai/gpt-4o-mini"><option value="openai/gpt-4o"><option value="google/gemini-2.0-flash-001"><option value="anthropic/claude-3.5-haiku"><option value="gpt-4o-mini"><option value="gpt-4o"></datalist>
+  <small>OpenRouter-এ নাম হয় "কোম্পানি/মডেল" (যেমন openai/gpt-4o-mini)। নাম openrouter.ai/models থেকে কপি করুন। সার্চ চাইলে টুল-সাপোর্ট থাকা মডেল নিন।</small>
   <label>ElevenLabs API Key (ঐচ্ছিক)</label>
   <input id="k_el" type="password" placeholder="ভয়েসের জন্য" autocomplete="off">
   <label>ElevenLabs Voice ID (ঐচ্ছিক)</label>
@@ -78,11 +82,11 @@ small{color:var(--mut);display:block;margin-top:4px}
 <script>
 const $=id=>document.getElementById(id);
 const log=$('log'),inp=$('in'),st=$('st'),core=$('core');
-const FIELDS={k_oa:'oa',k_model:'model',k_el:'el',k_vid:'vid',k_g:'g',k_cx:'cx',k_lang:'lang'};
+const FIELDS={k_prov:'prov',k_oa:'oa',k_model:'model',k_el:'el',k_vid:'vid',k_g:'g',k_cx:'cx',k_lang:'lang'};
 let cfg={};
 function load(){try{cfg=JSON.parse(localStorage.getItem('jarvis_cfg')||'{}')}catch(e){cfg={}}
   for(const [id,k] of Object.entries(FIELDS)){if(cfg[k])$(id).value=cfg[k]}
-  cfg.model=cfg.model||'gpt-4o-mini';cfg.lang=cfg.lang||'bn-BD'}
+  cfg.lang=cfg.lang||'bn-BD';if(!cfg.prov){cfg.prov='openrouter';$('k_prov').value='openrouter'}}
 function persist(){const c={};for(const [id,k] of Object.entries(FIELDS))c[k]=$(id).value.trim();cfg=c;
   try{localStorage.setItem('jarvis_cfg',JSON.stringify(c))}catch(e){}}
 load();
@@ -91,7 +95,7 @@ let hist=[],busy=false,speaking=false,wakeOn=false,awaiting=false,rec=null,manua
 function add(cls,t){const d=document.createElement('div');d.className='m '+cls;d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
 function setSt(t){st.textContent=t}
 function ready(){setSt(wakeOn?'শুনছি… "জার্ভিস" বলুন':'প্রস্তুত')}
-add('sys',cfg.oa?'আমি জার্ভিস। লিখুন, 🎤 চাপুন বা 👂 চালু করে "জার্ভিস" বলুন।':'প্রথমে ⚙ চেপে OpenAI Key দিন।');
+add('sys',cfg.oa?'আমি জার্ভিস। লিখুন, 🎤 চাপুন বা 👂 চালু করে "জার্ভিস" বলুন।':'প্রথমে ⚙ চেপে API Key দিন।');
 
 // ---- Speech ----
 function stopSpeak(){try{speechSynthesis.cancel()}catch(e){}if(curAudio){try{curAudio.pause()}catch(e){}curAudio=null}}
@@ -149,9 +153,13 @@ function handleWake(txt){
 const SYS='তুমি JARVIS, একজন বুদ্ধিমান ও বন্ধুত্বপূর্ণ ভয়েস অ্যাসিস্ট্যান্ট। ব্যবহারকারী যে ভাষায় বলে (বাংলা বা English) সেই ভাষাতেই উত্তর দেবে। উত্তর ছোট, পরিষ্কার ও কথ্য ভঙ্গিতে দেবে, মার্কডাউন ব্যবহার করবে না। আজকের তারিখ: '+new Date().toLocaleDateString('bn-BD')+'। সাম্প্রতিক খবর, দাম, আবহাওয়া বা যা তুমি নিশ্চিত নও তার জন্য web_search টুল ব্যবহার করবে।';
 const TOOLS=[{type:'function',function:{name:'web_search',description:'Search the web for current information',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}}];
 async function oa(messages,useTools){
-  const body={model:cfg.model,messages,temperature:0.6};
+  const or=cfg.prov!=='openai';
+  const model=cfg.model||(or?'openai/gpt-4o-mini':'gpt-4o-mini');
+  const body={model,messages,temperature:0.6};
   if(useTools)body.tools=TOOLS;
-  const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':'Bearer '+cfg.oa,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const headers={'Authorization':'Bearer '+cfg.oa,'Content-Type':'application/json'};
+  if(or){headers['HTTP-Referer']=location.origin;headers['X-Title']='JARVIS'}
+  const r=await fetch(or?'https://openrouter.ai/api/v1/chat/completions':'https://api.openai.com/v1/chat/completions',{method:'POST',headers,body:JSON.stringify(body)});
   const j=await r.json();
   if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
   return j.choices[0].message;
@@ -166,7 +174,7 @@ async function send(){
   const q=inp.value.trim();if(!q||busy)return;
   inp.value='';stopSpeak();stopRec();
   add('me',q);
-  if(!cfg.oa){add('ai','আগে ⚙ চেপে OpenAI Key দিন।');return}
+  if(!cfg.oa){add('ai','আগে ⚙ চেপে API Key দিন।');return}
   busy=true;core.classList.add('busy');setSt('ভাবছি…');
   hist.push({role:'user',content:q});
   const box=add('ai','…');
@@ -210,7 +218,7 @@ $('wake').onclick=()=>{
 $('gear').onclick=()=>$('set').classList.add('show');
 $('cancel').onclick=()=>{load();$('set').classList.remove('show')};
 $('save').onclick=()=>{persist();$('set').classList.remove('show');add('sys','সংরক্ষিত হয়েছে।');ready()};
-$('clear').onclick=()=>{if(confirm('সব Key মুছে ফেলবেন?')){try{localStorage.removeItem('jarvis_cfg')}catch(e){}for(const id of Object.keys(FIELDS))$(id).value='';cfg={model:'gpt-4o-mini',lang:'bn-BD'};}};
+$('clear').onclick=()=>{if(confirm('সব Key মুছে ফেলবেন?')){try{localStorage.removeItem('jarvis_cfg')}catch(e){}for(const id of Object.keys(FIELDS))$(id).value='';cfg={prov:'openrouter',lang:'bn-BD'};$('k_prov').value='openrouter';}};
 ready();
 </script>
 </body>
