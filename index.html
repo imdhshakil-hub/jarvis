@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050b14">
+<title>JARVIS</title>
+<style>
+:root{--bg:#050b14;--panel:#0b1626;--line:#12324f;--cy:#22d3ee;--tx:#e6f6ff;--mut:#7fa3bd;--me:#0e3a56}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font-family:system-ui,"Noto Sans Bengali",sans-serif;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0)}
+header{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+#core{width:42px;height:42px;border-radius:50%;border:3px solid var(--cy);box-shadow:0 0 14px var(--cy),inset 0 0 12px var(--cy);animation:p 2.4s ease-in-out infinite}
+#core.busy{animation:s 1s linear infinite;border-style:dashed}
+#core.hear{border-color:#4ade80;box-shadow:0 0 18px #4ade80,inset 0 0 12px #4ade80}
+@keyframes p{50%{transform:scale(1.1);opacity:.7}}
+@keyframes s{to{transform:rotate(360deg)}}
+h1{font-size:17px;letter-spacing:4px;margin:0;color:var(--cy)}
+#st{font-size:12px;color:var(--mut)}
+.hb{margin-left:auto;display:flex;gap:8px}
+button{border:0;border-radius:50%;width:44px;height:44px;background:var(--cy);color:#001;font-size:19px}
+button.sec{background:var(--panel);color:var(--cy);border:1px solid var(--cy)}
+button.on{background:#22c55e;color:#001}
+button.rec{background:#f43f5e;color:#fff}
+.hb button{width:38px;height:38px;font-size:15px}
+#log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:88%;padding:10px 14px;border-radius:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+.me{align-self:flex-end;background:var(--me)}
+.ai{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+.sys{align-self:center;color:var(--mut);font-size:13px;text-align:center}
+footer{display:flex;gap:8px;padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0));border-top:1px solid var(--line)}
+input,select{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;width:100%}
+footer input{flex:1;min-width:0;border-radius:22px}
+#set{position:fixed;inset:0;background:var(--bg);overflow-y:auto;padding:20px;padding-top:calc(20px + env(safe-area-inset-top,0));display:none;z-index:9}
+#set.show{display:block}
+#set label{display:block;margin:14px 0 6px;color:var(--mut);font-size:14px}
+#set .row{display:flex;gap:10px;margin-top:20px}
+#set .row button{border-radius:12px;width:auto;flex:1;height:48px;font-size:16px}
+small{color:var(--mut);display:block;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <div id="core"></div>
+  <div><h1>JARVIS</h1><div id="st">সেটিংসে Key দিন</div></div>
+  <div class="hb"><button class="sec" id="wake" title="সবসময় শুনুন">👂</button><button class="sec" id="gear">⚙</button></div>
+</header>
+<div id="log"></div>
+<footer>
+  <button class="sec" id="mic">🎤</button>
+  <input id="in" placeholder="এখানে লিখুন…" autocomplete="off">
+  <button id="go">➤</button>
+</footer>
+
+<div id="set">
+  <h2 style="color:var(--cy);margin-top:0">সেটিংস</h2>
+  <small>Key শুধু আপনার ফোনের ব্রাউজারে থাকে।</small>
+  <label>OpenAI API Key (বাধ্যতামূলক)</label>
+  <input id="k_oa" type="password" placeholder="sk-..." autocomplete="off">
+  <label>OpenAI মডেল</label>
+  <select id="k_model"><option value="gpt-4o-mini">gpt-4o-mini (সস্তা, দ্রুত)</option><option value="gpt-4o">gpt-4o (বেশি ভালো)</option></select>
+  <label>ElevenLabs API Key (ঐচ্ছিক)</label>
+  <input id="k_el" type="password" placeholder="ভয়েসের জন্য" autocomplete="off">
+  <label>ElevenLabs Voice ID (ঐচ্ছিক)</label>
+  <input id="k_vid" placeholder="খালি রাখলে ডিফল্ট ভয়েস" autocomplete="off">
+  <label>Google Search API Key (ঐচ্ছিক)</label>
+  <input id="k_g" type="password" autocomplete="off">
+  <label>Google Search Engine ID (cx)</label>
+  <input id="k_cx" autocomplete="off">
+  <label>কথা শোনার ভাষা</label>
+  <select id="k_lang"><option value="bn-BD">বাংলা</option><option value="en-US">English</option></select>
+  <small>ভাষা বদলাতে হলে এখানে বদলান।</small>
+  <div class="row"><button class="sec" id="cancel">বন্ধ</button><button id="save">সংরক্ষণ</button></div>
+  <div class="row"><button class="sec" id="clear" style="color:#f87171;border-color:#f87171">সব Key মুছুন</button></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const log=$('log'),inp=$('in'),st=$('st'),core=$('core');
+const FIELDS={k_oa:'oa',k_model:'model',k_el:'el',k_vid:'vid',k_g:'g',k_cx:'cx',k_lang:'lang'};
+let cfg={};
+function load(){try{cfg=JSON.parse(localStorage.getItem('jarvis_cfg')||'{}')}catch(e){cfg={}}
+  for(const [id,k] of Object.entries(FIELDS)){if(cfg[k])$(id).value=cfg[k]}
+  cfg.model=cfg.model||'gpt-4o-mini';cfg.lang=cfg.lang||'bn-BD'}
+function persist(){const c={};for(const [id,k] of Object.entries(FIELDS))c[k]=$(id).value.trim();cfg=c;
+  try{localStorage.setItem('jarvis_cfg',JSON.stringify(c))}catch(e){}}
+load();
+
+let hist=[],busy=false,speaking=false,wakeOn=false,awaiting=false,rec=null,manual=false,curAudio=null;
+function add(cls,t){const d=document.createElement('div');d.className='m '+cls;d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
+function setSt(t){st.textContent=t}
+function ready(){setSt(wakeOn?'শুনছি… "জার্ভিস" বলুন':'প্রস্তুত')}
+add('sys',cfg.oa?'আমি জার্ভিস। লিখুন, 🎤 চাপুন বা 👂 চালু করে "জার্ভিস" বলুন।':'প্রথমে ⚙ চেপে OpenAI Key দিন।');
+
+// ---- Speech ----
+function stopSpeak(){try{speechSynthesis.cancel()}catch(e){}if(curAudio){try{curAudio.pause()}catch(e){}curAudio=null}}
+async function speak(text){
+  speaking=true;stopRec();setSt('বলছি…');
+  const t=text.replace(/[*#`_]/g,'').slice(0,1500);
+  try{
+    if(cfg.el){
+      const vid=cfg.vid||'21m00Tcm4TlvDq8ikWAM';
+      const r=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(vid)+'?output_format=mp3_44100_128',{method:'POST',headers:{'xi-api-key':cfg.el,'Content-Type':'application/json'},body:JSON.stringify({text:t,model_id:'eleven_multilingual_v2'})});
+      if(!r.ok)throw new Error('el '+r.status);
+      const url=URL.createObjectURL(await r.blob());
+      await new Promise((res)=>{const a=new Audio(url);curAudio=a;a.onended=a.onerror=res;a.play().catch(res)});
+    }else{await browserSpeak(t)}
+  }catch(e){
+    add('sys','ElevenLabs চলেনি ('+(e.message||e)+'), ফোনের ভয়েস ব্যবহার করছি।');
+    await browserSpeak(t);
+  }
+  await new Promise(r=>setTimeout(r,700));
+  speaking=false;ready();if(wakeOn)startRec();
+}
+function browserSpeak(t){return new Promise(res=>{try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang=/[\u0980-\u09FF]/.test(t)?'bn-BD':'en-US';u.onend=u.onerror=res;speechSynthesis.speak(u)}catch(e){res()}})}
+
+// ---- Recognition ----
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function stopRec(){if(rec){const r=rec;rec=null;r.onend=null;try{r.abort()}catch(e){}}core.classList.remove('hear');$('mic').classList.remove('rec')}
+function startRec(oneShot){
+  if(!SR){add('sys','এই ব্রাউজারে ভয়েস ইনপুট নেই। Chrome ব্যবহার করুন।');return}
+  if(speaking||busy||rec)return;
+  const r=new SR();rec=r;r.lang=cfg.lang||'bn-BD';r.continuous=!oneShot;r.interimResults=oneShot;
+  manual=!!oneShot;
+  r.onstart=()=>{core.classList.add('hear');if(oneShot){$('mic').classList.add('rec');setSt('শুনছি…')}};
+  r.onresult=e=>{
+    let txt='',fin=false;
+    for(let i=e.resultIndex;i<e.results.length;i++){txt+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
+    txt=txt.trim();if(!txt)return;
+    if(oneShot){inp.value=txt;if(fin){stopRec();send()}return}
+    if(!fin)return;
+    handleWake(txt);
+  };
+  r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){add('sys','মাইকের অনুমতি দিন (ব্রাউজার সেটিংস → Site settings → Microphone)।');wakeOn=false;$('wake').classList.remove('on')}};
+  r.onend=()=>{if(rec===r){rec=null;core.classList.remove('hear');$('mic').classList.remove('rec');if(wakeOn&&!manual)setTimeout(()=>startRec(),300)}};
+  try{r.start()}catch(e){rec=null}
+}
+const WAKE=/(জার্ভিস|জারভিস|জারবিস|jarvis|hey jarvis|hello jarvis|হ্যালো|হেলো|hello)/i;
+function handleWake(txt){
+  if(awaiting){awaiting=false;inp.value=txt;send();return}
+  const m=txt.match(WAKE);if(!m)return;
+  let rest=txt.slice(m.index+m[0].length).replace(/^[\s,।.!?]+/,'').replace(/^(জার্ভিস|জারভিস|jarvis)[\s,।.!?]*/i,'').trim();
+  if(rest.length>1){inp.value=rest;send()}
+  else{awaiting=true;setSt('বলুন, শুনছি…');setTimeout(()=>{awaiting=false;if(!busy&&!speaking)ready()},8000)}
+}
+
+// ---- AI ----
+const SYS='তুমি JARVIS, একজন বুদ্ধিমান ও বন্ধুত্বপূর্ণ ভয়েস অ্যাসিস্ট্যান্ট। ব্যবহারকারী যে ভাষায় বলে (বাংলা বা English) সেই ভাষাতেই উত্তর দেবে। উত্তর ছোট, পরিষ্কার ও কথ্য ভঙ্গিতে দেবে, মার্কডাউন ব্যবহার করবে না। আজকের তারিখ: '+new Date().toLocaleDateString('bn-BD')+'। সাম্প্রতিক খবর, দাম, আবহাওয়া বা যা তুমি নিশ্চিত নও তার জন্য web_search টুল ব্যবহার করবে।';
+const TOOLS=[{type:'function',function:{name:'web_search',description:'Search the web for current information',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}}];
+async function oa(messages,useTools){
+  const body={model:cfg.model,messages,temperature:0.6};
+  if(useTools)body.tools=TOOLS;
+  const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':'Bearer '+cfg.oa,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+  return j.choices[0].message;
+}
+async function gsearch(q){
+  const u='https://www.googleapis.com/customsearch/v1?key='+encodeURIComponent(cfg.g)+'&cx='+encodeURIComponent(cfg.cx)+'&num=5&q='+encodeURIComponent(q);
+  const r=await fetch(u);const j=await r.json();
+  if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+  return (j.items||[]).map(x=>x.title+': '+x.snippet).join('\n')||'কিছু পাওয়া যায়নি';
+}
+async function send(){
+  const q=inp.value.trim();if(!q||busy)return;
+  inp.value='';stopSpeak();stopRec();
+  add('me',q);
+  if(!cfg.oa){add('ai','আগে ⚙ চেপে OpenAI Key দিন।');return}
+  busy=true;core.classList.add('busy');setSt('ভাবছি…');
+  hist.push({role:'user',content:q});
+  const box=add('ai','…');
+  try{
+    const useTools=!!(cfg.g&&cfg.cx);
+    const msgs=[{role:'system',content:SYS},...hist.slice(-14)];
+    let m=await oa(msgs,useTools);
+    if(m.tool_calls&&m.tool_calls.length){
+      setSt('সার্চ করছি…');box.textContent='🔎 খুঁজছি…';
+      msgs.push(m);
+      for(const tc of m.tool_calls){
+        let out;try{const a=JSON.parse(tc.function.arguments);out=await gsearch(a.query)}catch(e){out='সার্চ ব্যর্থ: '+e.message}
+        msgs.push({role:'tool',tool_call_id:tc.id,content:out});
+      }
+      m=await oa(msgs,false);
+    }
+    const text=(m.content||'').trim()||'দুঃখিত, উত্তর পাইনি।';
+    box.textContent=text;hist.push({role:'assistant',content:text});
+    busy=false;core.classList.remove('busy');
+    await speak(text);
+    return;
+  }catch(e){
+    box.textContent='ত্রুটি: '+(e.message||e);hist.pop();
+  }
+  busy=false;core.classList.remove('busy');ready();if(wakeOn)startRec();
+}
+
+// ---- UI ----
+$('go').onclick=send;
+inp.addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+$('mic').onclick=()=>{
+  if(rec&&manual){stopRec();ready();return}
+  stopSpeak();speaking=false;stopRec();startRec(true);
+};
+$('wake').onclick=()=>{
+  wakeOn=!wakeOn;$('wake').classList.toggle('on',wakeOn);
+  if(wakeOn){stopSpeak();startRec();add('sys','সবসময় শোনা চালু। "জার্ভিস, আজকের আবহাওয়া কেমন?" বলুন। স্ক্রিন চালু ও পেজ খোলা রাখতে হবে।')}
+  else{stopRec();awaiting=false}
+  ready();
+};
+$('gear').onclick=()=>$('set').classList.add('show');
+$('cancel').onclick=()=>{load();$('set').classList.remove('show')};
+$('save').onclick=()=>{persist();$('set').classList.remove('show');add('sys','সংরক্ষিত হয়েছে।');ready()};
+$('clear').onclick=()=>{if(confirm('সব Key মুছে ফেলবেন?')){try{localStorage.removeItem('jarvis_cfg')}catch(e){}for(const id of Object.keys(FIELDS))$(id).value='';cfg={model:'gpt-4o-mini',lang:'bn-BD'};}};
+ready();
+</script>
+</body>
+</html>
